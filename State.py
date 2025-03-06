@@ -1,22 +1,30 @@
+#Nour A. - Lab A
 from collections import deque
 import heapq
 
 class State:
     def __init__(self, position, remaining_rewards):
         self.position = position  # (x, y)
-        self.remaining_rewards = frozenset(remaining_rewards)  # {(x1, y1), (x2, y2), ...}
-        
+        self.remaining_rewards = frozenset(remaining_rewards)
+
     def __lt__(self, other):
-        return self.position < other.position
+        return self.position < other.position  #comparisons needed
 
 def get_neighbors(state, maze):
     x, y = state.position
+    rows, cols = len(maze), len(maze[0])
     possible_moves = [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]
-    valid_moves = [pos for pos in possible_moves if maze[pos[0]][pos[1]] != '%']
+    valid_moves = [
+        (nx, ny) for nx, ny in possible_moves
+        if 0 <= nx < rows and 0 <= ny < cols and maze[nx][ny] != '%'
+    ]
     return valid_moves
 
 def is_goal(state):
-    return len(state.remaining_rewards) == 0
+    if len(state.remaining_rewards) == 0:
+        print("Goal reached: The mouse is happy.")
+        return True
+    return False
 
 def read_maze(file_path):
     with open(file_path, 'r') as file:
@@ -34,34 +42,8 @@ def read_maze(file_path):
     
     return maze, State(start, rewards)
 
-def single_dfs(file_path):
-    maze, initial_state = read_maze(file_path)
-    stack = [(initial_state, [])]  # (current state, path taken)
-    visited = set()
-
-    while stack:
-        state, path = stack.pop()
-        
-        if state.position in visited:
-            continue
-        visited.add(state.position)
-
-        if is_goal(state):
-            print_maze_solution(maze, path)
-            print(f"Path cost: {len(path)}")
-            print(f"Nodes expanded: {len(visited)}")
-            return path
-        
-        for move in get_neighbors(state, maze):
-            new_rewards = state.remaining_rewards - {move} if move in state.remaining_rewards else state.remaining_rewards
-            new_state = State(move, new_rewards)
-            stack.append((new_state, path + [move]))
-
-    print("No solution found.")
-    return None
-
 def print_maze_solution(maze, path):
-    maze_copy = [row[:] for row in maze]  # Make a copy of the maze
+    maze_copy = [row[:] for row in maze]  # copy maze
     for x, y in path:
         if maze_copy[x][y] != '.':  # Keep rewards visible
             maze_copy[x][y] = '#'
@@ -69,66 +51,56 @@ def print_maze_solution(maze, path):
     print("\nSolution:")
     for row in maze_copy:
         print("".join(row))
-single_dfs('test_maze.txt')
-
-def single_bfs(file_path):
-    maze, initial_state = read_maze(file_path)
-    queue = deque([(initial_state, [])])  # (current state, path)
-    visited = set()
-
-    while queue:
-        state, path = queue.popleft()
-
-        if state.position in visited:
-            continue
-        visited.add(state.position)
-
-        if is_goal(state):
-            print_maze_solution(maze, path)
-            print(f"Path cost: {len(path)}")
-            print(f"Nodes passed: {len(visited)}")
-            return path
-
-        for move in get_neighbors(state, maze):
-            new_rewards = state.remaining_rewards - {move} if move in state.remaining_rewards else state.remaining_rewards
-            new_state = State(move, new_rewards)
-            queue.append((new_state, path + [move]))
-
-    print("Sadly, the mouse is dead :(")
-    return None
 
 def manhattan_distance(pos1, pos2):
     return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
-def single_gbfs(file_path):
+def multi_astar(file_path):
     maze, initial_state = read_maze(file_path)
-    goal = next(iter(initial_state.remaining_rewards))  # 1prize,1goal
-    
-    priority_queue = [(manhattan_distance(initial_state.position, goal), initial_state, [])]
-    visited = set()
+    priority_queue = [(0, 0, initial_state, [])]  # (f, g, state, path)
+    visited = {}  # keys are (position, remaining_rewards)
 
     while priority_queue:
-        _, state, path = heapq.heappop(priority_queue)
-
-
-        if state.position in visited:
+        _, g, state, path = heapq.heappop(priority_queue)
+        print(f"Expanding: {state.position} | Remaining rewards: {state.remaining_rewards}")
+        
+        if (state.position, state.remaining_rewards) in visited and visited[(state.position, state.remaining_rewards)] <= g:
             continue
-        visited.add(state.position)
+        visited[(state.position, state.remaining_rewards)] = g
 
-        if is_goal(state):
+        # if the reward gets collected, remove it (so no loop)
+        new_rewards = set(state.remaining_rewards)
+        if state.position in new_rewards:
+            print(f"Collected reward at {state.position}!")
+            new_rewards.remove(state.position)
+        
+        if not new_rewards:  # stop when all rewards are collected
+            print("Goal reached! The mouse is happy.")
             print_maze_solution(maze, path)
             print(f"Path cost: {len(path)}")
-            print(f"Nodes passed: {len(visited)}")
+            print(f"Nodes expanded: {len(visited)}")
             return path
 
         for move in get_neighbors(state, maze):
-            new_rewards = state.remaining_rewards - {move} if move in state.remaining_rewards else state.remaining_rewards
-            new_state = State(move, new_rewards)
-            heapq.heappush(priority_queue, (manhattan_distance(move, goal), new_state, path + [move]))
+            updated_rewards = frozenset(new_rewards)  # Convert back to frozenset
+            new_state = State(move, updated_rewards)
+            print(f"Moving to {move} | New rewards left: {updated_rewards}")
+            heuristic = sum(manhattan_distance(move, reward) for reward in updated_rewards)
+            new_g = g + 1
+            f = new_g + heuristic
+            heapq.heappush(priority_queue, (f, new_g, new_state, path + [move]))
 
-
-
-    print("Sadly, the mouse is dead :(")
+    print("The mouse is dead.")
     return None
 
-single_gbfs('test_maze.txt')
+if __name__ == "__main__":
+    while True:
+        file_name = input("Which maze do you want to throw the mouse at? Write the name: ")
+        if file_name.lower() == "q":
+            print("Quitting. The mouse escapes!")
+            break
+        try:
+            multi_astar(file_name)  #so that I don't have  a hardcoded file.
+            break
+        except FileNotFoundError:
+            print(f"Hmmmm..not sure that '{file_name}' is a correct maze name. Please try again or press 'q' to quit.")
